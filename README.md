@@ -34,7 +34,7 @@ Note: string: based on 'gets' (default), can
       char  : based on 'getch' (low level)
 ```
 
-Tip on ^Z
+A Tip on ^Z
 -----
 
 When string mode (default) is used, ^Z<Enter> could save ^Z into the output buffer, and another <Enter> is needed to
