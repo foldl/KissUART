@@ -4,7 +4,11 @@
 
 #include "uart_win32.h"
 
-#define dbg_print //printf
+#define dbg_print dummy //printf
+
+void dummy(...)
+{
+}
 
 static int finalize(p_uart_obj uart)
 {
@@ -156,11 +160,11 @@ bool check_comm_event(uart_obj *uart, const DWORD event)
     }
 
     // The event character was received and placed in the input buffer
-    if (event & EV_RXFLAG)
-    {
-        dbg_print("unexpected event: EV_RXFLAG\n");
-        goto error;
-    }
+    //if (event & EV_RXFLAG)
+    //{
+    //    dbg_print("unexpected event: EV_RXFLAG\n");
+    //    goto error;
+    //}
 
     // The last character in the output buffer was sent.
     if (event & EV_TXEMPTY)
@@ -385,6 +389,8 @@ uart_obj *uart_open(uart_obj *uart,
     dcb.fDtrControl = DTR_CONTROL_ENABLE;
     dcb.fOutX = FALSE;
     dcb.fInX = FALSE;
+    dcb.fBinary = TRUE;
+    dcb.ByteSize = 8;
     if (!SetCommState(uart->h_comm, &dcb))
     {
         fatal(uart, "SetCommState()");

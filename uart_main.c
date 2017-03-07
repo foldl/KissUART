@@ -3,16 +3,31 @@
 #include <conio.h>
 #include "uart_win32.h"
 
-#define dbg_printf printf
+#define dbg_printf //printf
 
+static bool hex = false;
 static void on_comm_read(uart_obj *uart, const char *buf, const int l)
 {
-    char s[20 * 1024];
+    static int counter = 0;
     if (l < 1) return;
 
-    strncpy(s, buf, l);
-    s[l] = '\0';
-    printf(s);
+    if (hex)
+    {
+        unsigned char *s = (unsigned char *)buf;
+        for (int i = 0; i < l; i++)
+        {
+            printf("%02X ", s[i]);
+            counter++;
+            if (counter % 32 == 0) printf("\n");
+        }
+    }
+    else
+    {
+        static char s[20 * 1024];
+        memcpy(s, buf, min(sizeof(s) - 1, l));
+        s[l] = '\0';
+        printf(s);
+    }
 }
 
 static void on_comm_close(uart_obj *uart, const enum_comm_close reason)
@@ -32,6 +47,7 @@ void help()
     printf("\t -parity    none | even | odd | mark | space\n");
     printf("Common options:\n");
     printf("\t -help/-?                                 show this\n");
+    printf("\t -hex       use hex display\n");
     printf("\t -cr        cr | lf | crlf | lfcr         default: cr\n");
     printf("\t -input     string | char \n"
            "\n"
@@ -48,7 +64,7 @@ void interact_direct();
 void interact_str();
 BOOL ctrl_handler(DWORD fdwCtrlType);
 
-int main(const int argc, const char *args[])
+int uart_main(const int argc, const char *args[])
 {   
     int port = -1;
     int baud = -1;
@@ -77,6 +93,7 @@ int main(const int argc, const char *args[])
         else load_i_param(baud)
         else load_i_param(databits)
         else load_i_param(stopbits)
+        else load_b_param(hex)
         else if ((strcmp(args[i], "-?") == 0) || (strcmp(args[i], "-help") == 0))
         {
             help();
