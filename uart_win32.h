@@ -6,6 +6,19 @@
 #define COMM_READ_BUF_SIZE      (2 * 1024)
 #define COMM_WRITE_BUF_SIZE     (10 * 1024)
 
+#ifdef MAKE_DLL
+#ifdef __cplusplus
+#define EXPORT_DLL extern "C" __declspec(dllexport) __stdcall
+#else
+#define EXPORT_DLL __declspec(dllexport) __stdcall
+#endif
+#define CB_CALL __stdcall
+#else
+#define EXPORT_DLL
+#define CB_CALL
+#endif
+
+
 enum enum_comm_close
 {
     cc_shutdown,
@@ -21,8 +34,8 @@ enum enum_events
     ev_last
 };
 
-typedef void (*f_on_comm_read)(void *param, const char *p, const int l);
-typedef void (*f_on_comm_close)(void *param, const enum_comm_close reason);
+typedef CB_CALL void (*f_on_comm_read)(void *param, const char *p, const int l);
+typedef CB_CALL void (*f_on_comm_close)(void *param, const enum_comm_close reason);
 
 typedef struct _uart_obj
 {
@@ -46,7 +59,7 @@ typedef struct _uart_obj
     char            comm_read_buf[COMM_READ_BUF_SIZE];
 } uart_obj, *p_uart_obj;
 
-uart_obj *uart_open(uart_obj *uart,
+EXPORT_DLL uart_obj *uart_open(uart_obj *uart,
             const int portnr,
             int  baud,          // baudrate   
             const char *parity, // parity    "none", "even", "odd", "mark", and "space"
@@ -57,8 +70,10 @@ uart_obj *uart_open(uart_obj *uart,
             f_on_comm_close  on_comm_close,
             void            *comm_close_param);
 
-void uart_send(uart_obj *uart, const char *buf, const int l);
+EXPORT_DLL void uart_send(uart_obj *uart, const char *buf, const int l);
 
-void uart_shutdown(uart_obj *uart);
+EXPORT_DLL void uart_shutdown(uart_obj *uart);
+
+EXPORT_DLL int get_uart_obj_size(void);
 
 #endif

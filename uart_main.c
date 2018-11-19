@@ -6,9 +6,10 @@
 #define dbg_printf //printf
 
 static bool hex = false;
+static int print_counter = 0;
 static void on_comm_read(uart_obj *uart, const char *buf, const int l)
 {
-    static int counter = 0;
+    
     if (l < 1) return;
 
     if (hex)
@@ -17,8 +18,8 @@ static void on_comm_read(uart_obj *uart, const char *buf, const int l)
         for (int i = 0; i < l; i++)
         {
             printf("%02X ", s[i]);
-            counter++;
-            if (counter % 32 == 0) printf("\n");
+            print_counter++;
+            if (print_counter % 32 == 0) printf("\n");
         }
     }
     else
@@ -62,9 +63,10 @@ static bool     use_getch = false;
 
 void interact_direct();
 void interact_str();
+void interact_hex();
 BOOL ctrl_handler(DWORD fdwCtrlType);
 
-int uart_main(const int argc, const char *args[])
+int main(const int argc, const char *args[])
 {   
     int port = -1;
     int baud = -1;
@@ -118,9 +120,16 @@ int uart_main(const int argc, const char *args[])
             strncpy(parity, args[i + 1], 19);
             i += 2;
         }
-        else
-            i++;
+        else i++;
     }
+
+    while (i < argc)
+    {
+        load_b_param(hex)
+        else i++;
+    }
+    
+    if (hex) use_getch = false;
 
     if (port < 0)
     {
@@ -153,8 +162,11 @@ int uart_main(const int argc, const char *args[])
     
     if (use_getch)
         interact_direct();
-    else
+    else if (!hex)
         interact_str();
+    else
+        interact_hex();
+    return 0;
 }
 
 void interact_str()
@@ -172,6 +184,63 @@ void interact_str()
 
         strcat(s, cr);
         uart_send(&uart, s, strlen(s));
+    }
+}
+
+int parsestr(char *s)
+{
+    int r = 0;
+    while (*s != '\0')
+    {
+        char c = *s++;
+        r *= 16;
+        if (('0' <= c) && (c <= '9')) r += c - '0';
+        else if (('A' <= c) && (c <= 'F')) r += c - 'A';
+        else if (('a' <= c) && (c <= 'a')) r += c - 'a';
+    }
+    return r;
+}
+
+int hexstr(char *s, char *b, int max)
+{
+    char *p = s;
+    int i = 0;
+
+    // parse hex input
+    while (*p != '\0')
+    {
+        char *start = p;
+        if (*p == ' ')
+        {
+            p++;
+            continue;
+        }
+
+        while ((*p != '\0') && (*p != ' ')) p++;
+        if (*p == ' ') *p = '\0';        
+        b[i++] = parsestr(start);
+        if (i > max) break;
+        p++;
+    }
+    return i;
+}
+
+void interact_hex()
+{
+    char s[10240 + 1];
+    char d[10240];
+    while (true)
+    {   
+        s[0] = '\0';
+        gets(s);
+        if (strlen(s) >= sizeof(s) - 1)
+        {
+            uart_shutdown(&uart);
+            break;
+        }
+        print_counter = 0;
+        int count = hexstr(s, d, sizeof(d) - 1);
+        uart_send(&uart, d, count);
     }
 }
 

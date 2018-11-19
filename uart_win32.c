@@ -4,7 +4,18 @@
 
 #include "uart_win32.h"
 
-#define dbg_print dummy //printf
+int port_dbg_print(const char *s, ...);
+
+#define dbg_print dummy // port_dbg_print // dummy //printf
+
+#ifdef MAKE_DLL
+
+BOOL WINAPI DllMain(HINSTANCE hInstance, DWORD fdwReason, PVOID pvReserved)
+{
+    return TRUE;
+}
+
+#endif
 
 void dummy(...)
 {
@@ -63,6 +74,7 @@ static bool comm_read(p_uart_obj uart)
                     dbg_print("ReadFile wait error\n");
                     return false;
                 }
+                continue;
             }
             else
             {
@@ -72,7 +84,7 @@ static bool comm_read(p_uart_obj uart)
         }
         if (to_read != read) 
         {
-            dbg_print("to_read != read\n");
+            dbg_print("to_read != read: %ld, %ld\n", to_read, read);
             return false;
         }
         uart->on_comm_read(uart->comm_read_param, uart->comm_read_buf, to_read);
@@ -111,8 +123,45 @@ ret:
     return r;
 }
 
-bool check_comm_event(uart_obj *uart, const DWORD event)
+static bool check_comm_event(uart_obj *uart, const DWORD event)
 {
+    // A line-status error occurred. Line-status errors are CE_FRAME, CE_OVERRUN, and CE_RXPARITY.
+    if (event & EV_ERR)
+    {
+        DWORD errors;
+        dbg_print("event: EV_ERR\n");
+        if (ClearCommError(uart->h_comm, &errors, NULL))
+        {
+#define check_error(err) if (errors & err) dbg_print("error cleared: " #err "\n")
+
+            check_error(CE_BREAK);
+            check_error(CE_FRAME);
+            check_error(CE_IOE);
+            check_error(CE_MODE);
+            check_error(CE_OVERRUN);      
+            check_error(CE_RXOVER);
+            check_error(CE_RXPARITY);
+            check_error(CE_TXFULL);
+        }
+        else
+            goto error;
+    }
+
+    // The RLSD (receive-line-signal-detect) signal changed state.
+    if (event & EV_RLSD)
+    {
+        dbg_print("event: EV_RLSD\n");
+        // goto error;
+    }
+
+    // A character was received and placed in the input buffer.
+    if (event & EV_RXCHAR)
+    {
+        dbg_print("event: EV_RXCHAR\n");
+        if (!comm_read(uart))
+            goto error;
+    }
+
     // A break was detected on input.
     if (event & EV_BREAK)
     {
@@ -131,32 +180,10 @@ bool check_comm_event(uart_obj *uart, const DWORD event)
         dbg_print("event: EV_DSR\n");
     }
 
-    // A line-status error occurred. Line-status errors are CE_FRAME, CE_OVERRUN, and CE_RXPARITY.
-    if (event & EV_ERR)
-    {
-        dbg_print("event: EV_ERR\n");
-        goto error;
-    }
-
     // A ring indicator was detected.
     if (event & EV_RING)
     {
         dbg_print("event: EV_RING\n");
-    }
-
-    // The RLSD (receive-line-signal-detect) signal changed state.
-    if (event & EV_RLSD)
-    {
-        dbg_print("event: EV_RLSD\n");
-        goto error;
-    }
-
-    // A character was received and placed in the input buffer.
-    if (event & EV_RXCHAR)
-    {
-        dbg_print("event: EV_RXCHAR\n");
-        if (!comm_read(uart))
-            goto error;
     }
 
     // The event character was received and placed in the input buffer
@@ -178,7 +205,7 @@ error:
     return false;    
 }
 
-bool wait_comm_event(uart_obj *uart, DWORD &event, bool &pending)
+static bool wait_comm_event(uart_obj *uart, DWORD &event, bool &pending)
 {
     if (pending) return true;
 
@@ -268,7 +295,7 @@ clean_up:
     return r;
 }
 
-uart_obj *uart_open(uart_obj *uart,
+EXPORT_DLL uart_obj *uart_open(uart_obj *uart,
             const int portnr,
             int  baud,          // baudrate   
             const char *parity, // parity    "none", "even", "odd", "mark", and "space"
@@ -353,16 +380,23 @@ uart_obj *uart_open(uart_obj *uart,
     }
     if (databits > 0)
     {
-        sprintf(s, "databits=%d ", databits);
+        sprintf(s, "data=%d ", databits);
         strcat(sdcb, s);
     }
     if (stopbits > 0)
     {
-        sprintf(s, "stopbits=%d ", stopbits);
+        sprintf(s, "stop=%d ", stopbits);
         strcat(sdcb, s);
     }
     if (strlen(parity) > 0)
-        strcat(sdcb, parity);
+    {
+        char temp[3] = {0};
+        char c = parity[0];
+        if ((c >= 'a') && (c <= 'z')) c = c - 'a' + 'A';
+        temp[0] = c;
+        sprintf(s, "parity=%s ", temp);
+        strcat(sdcb, s);
+    }
     dbg_print("dcb = %s\n", sdcb);
     
     if (!BuildCommDCB(sdcb, &dcb))
@@ -383,14 +417,14 @@ uart_obj *uart_open(uart_obj *uart,
     dbg_print("XonLim = %d\n", (int)dcb.XonLim);
     dbg_print("XoffLim = %d\n", (int)dcb.XoffLim);
 
-    dcb.fOutxCtsFlow = TRUE;
-    dcb.fOutxDsrFlow = FALSE;
-    dcb.fRtsControl = RTS_CONTROL_HANDSHAKE;
-    dcb.fDtrControl = DTR_CONTROL_ENABLE;
-    dcb.fOutX = FALSE;
-    dcb.fInX = FALSE;
+    //dcb.fOutxCtsFlow = TRUE;
+    //dcb.fOutxDsrFlow = FALSE;
+    //dcb.fRtsControl = RTS_CONTROL_HANDSHAKE;
+    //dcb.fDtrControl = DTR_CONTROL_ENABLE;
+    //dcb.fOutX = FALSE;
+    //dcb.fInX = FALSE;
     dcb.fBinary = TRUE;
-    dcb.ByteSize = 8;
+    //dcb.ByteSize = 8;
     if (!SetCommState(uart->h_comm, &dcb))
     {
         fatal(uart, "SetCommState()");
@@ -398,7 +432,7 @@ uart_obj *uart_open(uart_obj *uart,
     }     
     
     // flush the port   
-    PurgeComm(uart->h_comm, PURGE_RXCLEAR | PURGE_TXCLEAR | PURGE_RXABORT | PURGE_TXABORT);   
+    PurgeComm(uart->h_comm, PURGE_RXCLEAR | PURGE_TXCLEAR | PURGE_RXABORT | PURGE_TXABORT);
    
     // on_comm_close is enabled now
     uart->on_comm_close = on_comm_close;
@@ -421,13 +455,15 @@ uart_obj *uart_open(uart_obj *uart,
     return uart;
 }
 
-void uart_shutdown(uart_obj *uart)
+EXPORT_DLL void uart_shutdown(uart_obj *uart)
 {
     SetEvent(uart->events[ev_shutdown]);
+#ifndef MAKE_DLL
     WaitForSingleObject(uart->h_thread, INFINITE);
+#endif
 }
  
-void uart_send(uart_obj *uart, const char *buf, const int l)
+EXPORT_DLL void uart_send(uart_obj *uart, const char *buf, const int l)
 {
 #ifdef _DEBUG
     printf("send %d byte(s):", l);
@@ -450,4 +486,7 @@ void uart_send(uart_obj *uart, const char *buf, const int l)
     SetEvent(uart->events[ev_write]);
 }
 
-
+EXPORT_DLL int get_uart_obj_size()
+{
+    return sizeof(uart_obj);
+}

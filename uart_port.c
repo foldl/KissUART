@@ -99,7 +99,7 @@ bool send_comm_response(const int t, const byte *s, const int len)
     return write_cmd(out_buf, len + 1) > 0; 
 }
 
-static int port_dbg_print(const char *s, ...)
+int port_dbg_print(const char *s, ...)
 {
     char t[20 * 1024];
     t[0] = '\0';
