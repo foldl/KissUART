@@ -46,7 +46,7 @@ options are obviously not avaliable.
 
 `socat` is powerful Linux tool, which can let other programs access an uart port
 just like a TCP port. On Windows, it is much easier to build our own wheel than
-to search a similar tool. See `uart2tcp.erl`.
+to search a similar tool. See [`uart2tcp.erl`](uart2tcp.erl).
 
 ## A DLL
 
