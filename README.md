@@ -37,6 +37,11 @@ Note: string: based on 'gets' (default),
       char  : based on 'getch' (low level)
 ```
 
+### A Tip on ^Z
+
+When string mode (default) is used, ^Z<Enter> could save ^Z into the output buffer, and another <Enter> is needed to
+write it to COM port.
+
 ## An Erlang port
 
 This Erlang port uses the exactly the same command line options as the stand alone executable, except that all common
@@ -81,10 +86,5 @@ function GetUartObjSize: Integer; stdcall; external 'uart.dll' name 'get_uart_ob
 
 ```
 
-A Tip on ^Z
------
-
-When string mode (default) is used, ^Z<Enter> could save ^Z into the output buffer, and another <Enter> is needed to
-write it to COM port.
 
 
