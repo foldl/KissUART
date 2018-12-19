@@ -6,17 +6,14 @@ This can be built into a command line tool, an Erlang port, or a DLL as needed.
 
 # Build
 
-## A stand alone executable
+Batch file using GCC is provided. It's would be simple to use another compiler
+instead.
 
-`g++ -Wall -s -o .\uart.exe uart_main.c uart_win32.c`
+* A stand alone executable:  `build.bat EXE`
 
-## An Erlang port
+* An Erlang port: `build.bat PORT`
 
-`g++ -Wall -s -o .\uart_port.exe uart_port.c uart_win32.c`
-
-## A DLL
-
-`g++ -Wall -D MAKE_DLL -shared -s -o .\uart.dll uart_win32.c`
+* A DLL: `build.bat DLL`
 
 # Usage
 
@@ -44,6 +41,12 @@ Note: string: based on 'gets' (default),
 
 This Erlang port uses the exactly the same command line options as the stand alone executable, except that all common
 options are obviously not avaliable.
+
+### Example: uart2tcp
+
+`socat` is powerful Linux tool, which can let other programs access an uart port
+just like a TCP port. On Windows, it is much easier to build our own wheel than
+to search a similar tool. See `uart2tcp.erl`.
 
 ## A DLL
 
