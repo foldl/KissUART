@@ -49,6 +49,7 @@ void help()
     printf("Common options:\n");
     printf("\t -help/-?                                 show this\n");
     printf("\t -hex       use hex display\n");
+    printf("\t -async_io  use win32 async IO operations default: OFF\n");
     printf("\t -cr        cr | lf | crlf | lfcr         default: cr\n");
     printf("\t -input     string | char \n"
            "\n"
@@ -73,6 +74,7 @@ int main(const int argc, const char *args[])
     char parity[20] = {'\0'};
     int  databits = -1;
     int  stopbits = -1;
+    bool async_io = false;
 
 #define load_i_param(param) \
     if (strcmp(args[i], "-"#param) == 0)   \
@@ -96,6 +98,7 @@ int main(const int argc, const char *args[])
         else load_i_param(databits)
         else load_i_param(stopbits)
         else load_b_param(hex)
+        else load_b_param(async_io)
         else if ((strcmp(args[i], "-?") == 0) || (strcmp(args[i], "-help") == 0))
         {
             help();
@@ -146,7 +149,8 @@ int main(const int argc, const char *args[])
                   f_on_comm_read(on_comm_read),
                   &uart,
                   f_on_comm_close(on_comm_close),
-                  &uart) == NULL) 
+                  &uart,
+                  async_io) == NULL) 
     {
         fprintf(stderr, "Failed to open the specified port COM%d\n", port);
         return -1;
@@ -227,8 +231,8 @@ int hexstr(char *s, char *b, int max)
 
 void interact_hex()
 {
-    char s[10240 + 1];
-    char d[10240];
+    static char s[10240 + 1];
+    static char d[10240];
     while (true)
     {   
         s[0] = '\0';
@@ -248,7 +252,7 @@ void interact_direct()
 {
     while (true)
     {
-        char ch = getch();
+        char ch = _getch();
         
         // although it is said that getch can't be used to capture Ctrl+C
         if (ch == 3)

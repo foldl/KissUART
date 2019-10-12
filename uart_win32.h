@@ -18,21 +18,24 @@
 #define CB_CALL
 #endif
 
+#if  _MSC_VER > 1800
+#define gets gets_s
+#endif
 
-enum enum_comm_close
+typedef enum
 {
     cc_shutdown,
     cc_error
-};
+} enum_comm_close;
 
-enum enum_events
+typedef enum 
 {
     ev_shutdown,
     ev_comm_event,
     ev_comm_write,
     ev_write,
     ev_last
-};
+} enum_events;
 
 typedef CB_CALL void (*f_on_comm_read)(void *param, const char *p, const int l);
 typedef CB_CALL void (*f_on_comm_close)(void *param, const enum_comm_close reason);
@@ -40,8 +43,10 @@ typedef CB_CALL void (*f_on_comm_close)(void *param, const enum_comm_close reaso
 typedef struct _uart_obj
 {
     char            comm[256];
+    bool            async_io;
     HANDLE          h_comm;
-    HANDLE          h_thread;
+    HANDLE          h_thread; 
+    HANDLE          h_comm_state;
     OVERLAPPED      o_event;
     OVERLAPPED      o_write;
     OVERLAPPED      o_read;
@@ -68,12 +73,19 @@ EXPORT_DLL uart_obj *uart_open(uart_obj *uart,
             f_on_comm_read   on_comm_read,
             void            *comm_read_param,
             f_on_comm_close  on_comm_close,
-            void            *comm_close_param);
+            void            *comm_close_param,
+            const bool             async_io);
 
 EXPORT_DLL void uart_send(uart_obj *uart, const char *buf, const int l);
 
 EXPORT_DLL void uart_shutdown(uart_obj *uart);
 
 EXPORT_DLL int get_uart_obj_size(void);
+
+EXPORT_DLL int uart_config(uart_obj *uart,
+            int  baud,
+            const char *parity,
+            int  databits,
+            int  stopbits);
 
 #endif

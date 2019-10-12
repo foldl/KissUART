@@ -130,6 +130,7 @@ int main(const int argc, const char *args[])
     char parity[20] = {'\0'};
     int  databits = -1;
     int  stopbits = -1;
+    bool async_io = false;
 
     setmode(0, O_BINARY);
     setmode(1, O_BINARY);
@@ -138,6 +139,10 @@ int main(const int argc, const char *args[])
     if (strcmp(args[i], "-"#param) == 0)   \
     {   param = atoi(args[i + 1]); i += 2; }
 
+#define load_b_param(param) \
+    if (strcmp(args[i], "-"#param) == 0)   \
+    {   param = true; i++; }
+
     int i = 1;
     while (i < argc - 1)
     {
@@ -145,6 +150,7 @@ int main(const int argc, const char *args[])
         else load_i_param(baud)
         else load_i_param(databits)
         else load_i_param(stopbits)
+        else load_b_param(async_io)
         else if (strcmp(args[i], "-parity") == 0)
         {
             strncpy(parity, args[i + 1], 19);
@@ -169,7 +175,8 @@ int main(const int argc, const char *args[])
                   f_on_comm_read(on_comm_read),
                   &uart,
                   f_on_comm_close(on_comm_close),
-                  &uart) == NULL) 
+                  &uart,
+                  async_io) == NULL) 
     {
         dbg_printf("failed to open the specified COM port\n");
         return -1;

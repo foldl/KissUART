@@ -1,6 +1,8 @@
 // http://msdn.microsoft.com/en-us/library/ms810467.aspx
 //
 #include <stdio.h>
+#include <time.h>
+#include <stdint.h>
 
 #include "uart_win32.h"
 
@@ -12,6 +14,8 @@ int port_dbg_print(const char *s, ...);
 
 BOOL WINAPI DllMain(HINSTANCE hInstance, DWORD fdwReason, PVOID pvReserved)
 {
+    srand(time(NULL));
+
     return TRUE;
 }
 
@@ -24,10 +28,8 @@ void dummy(...)
 static int finalize(p_uart_obj uart)
 {
     CloseHandle(uart->h_comm);
-    CloseHandle(uart->events[ev_comm_event]);
-    CloseHandle(uart->events[ev_comm_write]);
-    CloseHandle(uart->events[ev_shutdown]);
-    CloseHandle(uart->events[ev_write]);
+    for (int i = 0; i < ev_last; i++)
+        CloseHandle(uart->events[i]);
     DeleteCriticalSection(&uart->cs);
     return 0;
 }
@@ -37,6 +39,62 @@ static int fatal(p_uart_obj uart, const char *msg)
     dbg_print("fatal: %s\n", msg);
     finalize(uart);
     return -1;
+}
+
+static bool comm_read2(p_uart_obj uart, char b)
+{
+    COMSTAT comStat;
+    DWORD   dwErrors;
+    bool first = true;
+
+    uart->comm_read_buf[0] = b;
+
+    // Get and clear current errors on the port.
+    if (!ClearCommError(uart->h_comm, &dwErrors, &comStat) || (comStat.cbInQue == 0))
+    {
+        uart->on_comm_read(uart->comm_read_param, uart->comm_read_buf, 1);
+        return true;
+    }
+
+    dbg_print("comStat.cbInQue = %d, \n", (int)comStat.cbInQue);
+
+    DWORD to_read;
+    DWORD read;
+
+    uart->comm_read_buf[0] = b;
+    to_read = min(COMM_READ_BUF_SIZE - 1, comStat.cbInQue);
+    while (to_read > 0)
+    {
+        if (!ReadFile(uart->h_comm, first ? uart->comm_read_buf + 1 : uart->comm_read_buf, 
+                      to_read, &read, &uart->o_write))
+        {
+            if (GetLastError() == ERROR_IO_PENDING)
+            {
+                if (WaitForSingleObject(uart->o_write.hEvent, INFINITE) != WAIT_OBJECT_0)
+                {
+                    dbg_print("ReadFile wait error\n");
+                    return false;
+                }
+                continue;
+            }
+            else
+            {
+                dbg_print("ReadFile ERROR_IO_PENDING\n");
+                return false;
+            }
+        }
+        if (to_read != read)
+        {
+            dbg_print("to_read != read: %ld, %ld\n", to_read, read);
+            return false;
+        }
+        uart->on_comm_read(uart->comm_read_param, uart->comm_read_buf, first ? to_read + 1 : to_read);
+        comStat.cbInQue -= to_read;
+        to_read = min(COMM_READ_BUF_SIZE, comStat.cbInQue);
+        first = false;
+    }
+
+    return true;
 }
  
 static bool comm_read(p_uart_obj uart)
@@ -123,7 +181,7 @@ ret:
     return r;
 }
 
-static bool check_comm_event(uart_obj *uart, const DWORD event)
+static bool handle_comm_event(uart_obj *uart, const DWORD event)
 {
     // A line-status error occurred. Line-status errors are CE_FRAME, CE_OVERRUN, and CE_RXPARITY.
     if (event & EV_ERR)
@@ -205,8 +263,24 @@ error:
     return false;    
 }
 
+static DWORD WINAPI uart_rx_loop(uart_obj* uart)
+{
+    DWORD len = 0;
+    char b = 0;
+
+    while (ReadFile(uart->h_comm, &b, 1, &len, NULL))
+    {
+        if (len)
+            comm_read2(uart, b);
+    }
+
+    return 0;
+}
+
 static bool wait_comm_event(uart_obj *uart, DWORD &event, bool &pending)
 {
+    if (!uart->async_io) return true;
+
     if (pending) return true;
 
     while (true)
@@ -219,17 +293,17 @@ static bool wait_comm_event(uart_obj *uart, DWORD &event, bool &pending)
         }
         else
         {
-            if (!check_comm_event(uart, event))
+            if (!handle_comm_event(uart, event))
                 return false;
         }
     }
 }
 
-static DWORD WINAPI uart_thread(uart_obj *uart)
+static DWORD WINAPI uart_thread(uart_obj* uart)
 {
     // Misc. variables   
-    DWORD transfered = 0;    
-       
+    DWORD transfered = 0;
+
     bool  shutdown = false;
     DWORD event = 0;
     bool  event_pending = false;
@@ -240,17 +314,17 @@ static DWORD WINAPI uart_thread(uart_obj *uart)
     if (!wait_comm_event(uart, event, event_pending))
         goto error;
 
-    while (!shutdown)    
-    {    
-        DWORD Event = WaitForMultipleObjects(sizeof(uart->events) / sizeof(uart->events[0]), 
-                                       uart->events, FALSE, INFINITE);   
+    while (!shutdown)
+    {
+        DWORD Event = WaitForMultipleObjects(sizeof(uart->events) / sizeof(uart->events[0]),
+            uart->events, FALSE, INFINITE);
         dbg_print("Event = %d\n", (int)Event - WAIT_OBJECT_0);
-        switch (Event)   
+        switch (Event)
         {
         case WAIT_OBJECT_0 + ev_shutdown:
             shutdown = true;
-            break;   
-        case WAIT_OBJECT_0 + ev_comm_event: 
+            break;
+        case WAIT_OBJECT_0 + ev_comm_event:
             // read event   
             event_pending = false;
             if (!GetOverlappedResult(uart->h_comm, &uart->o_event, &transfered, FALSE))
@@ -259,40 +333,120 @@ static DWORD WINAPI uart_thread(uart_obj *uart)
                 goto error;
             }
             ResetEvent(uart->events[ev_comm_event]);
-            if (!check_comm_event(uart, event))
+            if (!handle_comm_event(uart, event))
                 goto error;
             if (!wait_comm_event(uart, event, event_pending))
                 goto error;
-            break;   
-        case WAIT_OBJECT_0 + ev_comm_write: 
+            break;
+        case WAIT_OBJECT_0 + ev_comm_write:
             write_pending = false;
             ResetEvent(uart->events[ev_comm_write]);
             if (!comm_write(uart, write_pending))
                 goto error;
-            break; 
-        case WAIT_OBJECT_0 + ev_write: 
+            break;
+        case WAIT_OBJECT_0 + ev_write:
             if (!comm_write(uart, write_pending))
                 goto error;
-            break;  
+            break;
         default:
             goto error;
         }
-   
-    }  
-   
+
+    }
+
     goto clean_up;
 
 error:
     r = -1;
     reason = cc_error;
 
-clean_up:    
-    
+clean_up:
+
     finalize(uart);
     if (NULL != uart->on_comm_close)
         uart->on_comm_close(uart->comm_close_param, reason);
 
     return r;
+}
+
+EXPORT_DLL int uart_config(uart_obj *uart,
+            int  baud,          // baudrate   
+            const char *parity, // parity    "none", "even", "odd", "mark", and "space"
+            int  databits,      // databits    
+            int  stopbits)
+{
+    DCB dcb;
+    memset(&dcb, 0, sizeof(DCB));
+    dcb.DCBlength = sizeof(DCB);    
+    if (!GetCommState(uart->h_comm, &dcb))
+    {
+        fatal(uart, "GetCommState()");
+        return 1;
+    }   
+
+    char sdcb[200] = {'\0'};
+    char s[100];
+    if (baud > 0)
+    {
+        sprintf(s, "baud=%d ", baud);
+        strcat(sdcb, s);
+    }
+    if (databits > 0)
+    {
+        sprintf(s, "data=%d ", databits);
+        strcat(sdcb, s);
+    }
+    if (stopbits > 0)
+    {
+        sprintf(s, "stop=%d ", stopbits);
+        strcat(sdcb, s);
+    }
+    if (strlen(parity) > 0)
+    {
+        char temp[3] = {0};
+        char c = parity[0];
+        if ((c >= 'a') && (c <= 'z')) c = c - 'a' + 'A';
+        temp[0] = c;
+        sprintf(s, "parity=%s ", temp);
+        strcat(sdcb, s);
+    }
+    dbg_print("dcb = %s\n", sdcb);
+
+    if (!BuildCommDCBA(sdcb, &dcb))
+    {
+        fatal(uart, "BuildCommDCB()");
+        return 2;
+    }
+
+    dbg_print("fOutxCtsFlow = %d\n", (int)dcb.fOutxCtsFlow);
+    dbg_print("fOutxDsrFlow = %d\n", (int)dcb.fOutxDsrFlow);
+    dbg_print("fRtsControl = %d\n", (int)dcb.fRtsControl);
+    dbg_print("fDtrControl = %d\n", (int)dcb.fDtrControl);
+    dbg_print("fDsrSensitivity = %d\n", (int)dcb.fDsrSensitivity);
+    dbg_print("fOutX = %d\n", (int)dcb.fOutX);
+    dbg_print("BaudRate = %d\n", (int)dcb.BaudRate);
+    dbg_print("fParity = %d\n", (int)dcb.fParity);
+    dbg_print("fAbortOnError = %d\n", (int)dcb.fAbortOnError);
+    dbg_print("XonLim = %d\n", (int)dcb.XonLim);
+    dbg_print("XoffLim = %d\n", (int)dcb.XoffLim);
+
+    //dcb.fOutxCtsFlow = TRUE;
+    //dcb.fOutxDsrFlow = FALSE;
+    //dcb.fRtsControl = RTS_CONTROL_HANDSHAKE;
+    //dcb.fDtrControl = DTR_CONTROL_ENABLE;
+    //dcb.fOutX = FALSE;
+    //dcb.fInX = FALSE;
+    dcb.fBinary = TRUE;
+    //dcb.ByteSize = 8;
+    if (!SetCommState(uart->h_comm, &dcb))
+    {
+        fatal(uart, "SetCommState()");
+        return 3;
+    }     
+    
+    // flush the port   
+    PurgeComm(uart->h_comm, PURGE_RXCLEAR | PURGE_TXCLEAR | PURGE_RXABORT | PURGE_TXABORT);
+    return 0;
 }
 
 EXPORT_DLL uart_obj *uart_open(uart_obj *uart,
@@ -304,12 +458,14 @@ EXPORT_DLL uart_obj *uart_open(uart_obj *uart,
             f_on_comm_read   on_comm_read,
             void            *comm_read_param,
             f_on_comm_close  on_comm_close,
-            void            *comm_close_param) 
+            void            *comm_close_param,
+            const bool             async_io) 
 {
     memset(uart, 0, sizeof(*uart));
     uart->on_comm_read = on_comm_read;
     uart->comm_read_param = comm_read_param;
     uart->comm_close_param = comm_close_param;
+    uart->async_io = async_io;
 
     uart->events[ev_shutdown] = CreateEvent(NULL, FALSE, FALSE, NULL);
     uart->events[ev_comm_event] = CreateEvent(NULL, TRUE, FALSE, NULL);  // manual reset for OVERLAPPED 
@@ -331,12 +487,12 @@ EXPORT_DLL uart_obj *uart_open(uart_obj *uart,
     timeout.WriteTotalTimeoutConstant = 1000;
 
     // get a handle to the port   
-    uart->h_comm = CreateFile(uart->comm,               // communication port string (COMX)   
+    uart->h_comm = CreateFileA(uart->comm,               // communication port string (COMX)   
                          GENERIC_READ | GENERIC_WRITE,  // read/write types   
                          0,                             // comm devices must be opened with exclusive access   
                          NULL,                          // no security attributes   
                          OPEN_EXISTING,                 // comm devices must use OPEN_EXISTING   
-                         FILE_FLAG_OVERLAPPED,          // Async I/O   
+                         async_io ? FILE_FLAG_OVERLAPPED : 0,          // Async I/O   
                          0);                            // template must be 0 for comm devices   
    
     if (uart->h_comm == INVALID_HANDLE_VALUE)   
@@ -371,68 +527,8 @@ EXPORT_DLL uart_obj *uart_open(uart_obj *uart,
         return NULL;
     }   
 
-    char sdcb[200] = {'\0'};
-    char s[100];
-    if (baud > 0)
-    {
-        sprintf(s, "baud=%d ", baud);
-        strcat(sdcb, s);
-    }
-    if (databits > 0)
-    {
-        sprintf(s, "data=%d ", databits);
-        strcat(sdcb, s);
-    }
-    if (stopbits > 0)
-    {
-        sprintf(s, "stop=%d ", stopbits);
-        strcat(sdcb, s);
-    }
-    if (strlen(parity) > 0)
-    {
-        char temp[3] = {0};
-        char c = parity[0];
-        if ((c >= 'a') && (c <= 'z')) c = c - 'a' + 'A';
-        temp[0] = c;
-        sprintf(s, "parity=%s ", temp);
-        strcat(sdcb, s);
-    }
-    dbg_print("dcb = %s\n", sdcb);
-    
-    if (!BuildCommDCB(sdcb, &dcb))
-    {
-        fatal(uart, "BuildCommDCB()");
+    if (uart_config(uart, baud, parity, databits, stopbits) != 0)
         return NULL;
-    }
-
-    dbg_print("fOutxCtsFlow = %d\n", (int)dcb.fOutxCtsFlow);
-    dbg_print("fOutxDsrFlow = %d\n", (int)dcb.fOutxDsrFlow);
-    dbg_print("fRtsControl = %d\n", (int)dcb.fRtsControl);
-    dbg_print("fDtrControl = %d\n", (int)dcb.fDtrControl);
-    dbg_print("fDsrSensitivity = %d\n", (int)dcb.fDsrSensitivity);
-    dbg_print("fOutX = %d\n", (int)dcb.fOutX);
-    dbg_print("BaudRate = %d\n", (int)dcb.BaudRate);
-    dbg_print("fParity = %d\n", (int)dcb.fParity);
-    dbg_print("fAbortOnError = %d\n", (int)dcb.fAbortOnError);
-    dbg_print("XonLim = %d\n", (int)dcb.XonLim);
-    dbg_print("XoffLim = %d\n", (int)dcb.XoffLim);
-
-    //dcb.fOutxCtsFlow = TRUE;
-    //dcb.fOutxDsrFlow = FALSE;
-    //dcb.fRtsControl = RTS_CONTROL_HANDSHAKE;
-    //dcb.fDtrControl = DTR_CONTROL_ENABLE;
-    //dcb.fOutX = FALSE;
-    //dcb.fInX = FALSE;
-    dcb.fBinary = TRUE;
-    //dcb.ByteSize = 8;
-    if (!SetCommState(uart->h_comm, &dcb))
-    {
-        fatal(uart, "SetCommState()");
-        return NULL;
-    }     
-    
-    // flush the port   
-    PurgeComm(uart->h_comm, PURGE_RXCLEAR | PURGE_TXCLEAR | PURGE_RXABORT | PURGE_TXABORT);
    
     // on_comm_close is enabled now
     uart->on_comm_close = on_comm_close;
@@ -452,6 +548,18 @@ EXPORT_DLL uart_obj *uart_open(uart_obj *uart,
         return NULL;
     }
 
+    if (!async_io)
+    {
+        uart->h_comm_state = CreateThread(
+            NULL,     // _In_opt_   LPSECURITY_ATTRIBUTES lpThreadAttributes,
+            0,        // _In_       SIZE_T dwStackSize,
+            LPTHREAD_START_ROUTINE(uart_rx_loop),  // _In_       LPTHREAD_START_ROUTINE lpStartAddress,
+            uart,     // _In_opt_   LPVOID lpParameter,
+            0,        // _In_       DWORD dwCreationFlags,
+            NULL      // _Out_opt_  LPDWORD lpThreadId
+        );
+    }
+
     return uart;
 }
 
@@ -462,7 +570,7 @@ EXPORT_DLL void uart_shutdown(uart_obj *uart)
     WaitForSingleObject(uart->h_thread, INFINITE);
 #endif
 }
- 
+
 EXPORT_DLL void uart_send(uart_obj *uart, const char *buf, const int l)
 {
 #ifdef _DEBUG
