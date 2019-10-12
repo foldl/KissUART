@@ -29,6 +29,7 @@ UART port options:
 Common options:
          -help/-?                                 show this
          -hex       use hex display
+         -async_io  use win32 async IO operations default: OFF
          -cr        cr | lf | crlf | lfcr         default: cr
          -input     string | char
 
@@ -39,7 +40,7 @@ Note: string: based on 'gets' (default),
 
 ## An Erlang port
 
-This Erlang port uses the exactly the same command line options as the stand alone executable, except that all common
+This Erlang port uses the exactly the same command line options as the stand alone executable, except that some common
 options are obviously not avaliable.
 
 ### Example: uart2tcp
@@ -50,7 +51,7 @@ to search a similar tool. See [`uart2tcp.erl`](uart2tcp.erl).
 
 ## A DLL
 
-Only 4 APIs are exported by this DLL. Below is Pascal (Delphi/Lazarus) code for reference.
+Only 5 APIs are exported by this DLL. Below is Pascal (Delphi/Lazarus) code for reference.
 
 ```Pascal
 type
@@ -79,12 +80,12 @@ procedure UartShutdown(Uart: TUartObj); stdcall; external 'uart.dll' name 'uart_
 
 function GetUartObjSize: Integer; stdcall; external 'uart.dll' name 'get_uart_obj_size@0';
 
+function UartConfig(Uart: TUartObj;
+                    const Baud: Integer;
+                    const Parity: PChar;
+                    const DataBits: Integer;
+                    const StopBits: Integer): Integer; stdcall; external 'uart.dll' name 'uart_config@20';
 ```
 
-A Tip on ^Z
------
-
-When string mode (default) is used, ^Z<Enter> could save ^Z into the output buffer, and another <Enter> is needed to
-write it to COM port.
 
 
