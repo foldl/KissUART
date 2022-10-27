@@ -1,6 +1,6 @@
 # KissUART
 
-A serial port utility (for Windows) based on KISS principle.
+A serial port utility (for Windows) based on K.I.S.S. principle.
 
 This can be built into a command line tool, an Erlang port, or a DLL as needed.
 
@@ -61,7 +61,7 @@ Only 5 APIs are exported by this DLL. Below is Pascal (Delphi/Lazarus) code for 
 
 ```Pascal
 type
- 
+
   TUartObj = Pointer;
   TCommCloseReason = (ccShutdown, ccError);
   TOnCommRead = procedure (Param: Pointer; const P: PByte; const L: Integer);
