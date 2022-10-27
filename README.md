@@ -29,6 +29,7 @@ UART port options:
 Common options:
          -help/-?                                 show this
          -hex       use hex display
+         -timestamp display time stamp for output default: OFF
          -async_io  use win32 async IO operations default: OFF
          -cr        cr | lf | crlf | lfcr         default: cr
          -input     string | char
@@ -37,6 +38,11 @@ Note: string: based on 'gets' (default),
               can use UP/DOWN to access input history
       char  : based on 'getch' (low level)
 ```
+
+### A Tip on ^Z
+
+When string mode (default) is used, ^Z<Enter> could save ^Z into the output buffer, and another <Enter> is needed to
+write it to COM port.
 
 ## An Erlang port
 

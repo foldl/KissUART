@@ -1,15 +1,33 @@
 //
 #include <stdio.h>
 #include <conio.h>
+#include <time.h>
+#include <math.h>
+#include <sys/time.h>
 #include "uart_win32.h"
 
-#define dbg_printf //printf
+#define dbg_printf(...) //printf
 
 static bool hex = false;
+static bool timestamp = false;
 static int print_counter = 0;
+
+static void print_time(void)
+{
+    SYSTEMTIME wtm;
+    GetLocalTime(&wtm);
+    printf("[%04d-%2d-%02d %02d:%02d:%02d.%02d] ",
+           wtm.wYear,
+           wtm.wMonth,
+           wtm.wDay,
+           wtm.wHour,
+           wtm.wMinute,
+           wtm.wSecond,
+           wtm.wMilliseconds / 1000);
+}
+
 static void on_comm_read(uart_obj *uart, const char *buf, const int l)
 {
-    
     if (l < 1) return;
 
     if (hex)
@@ -19,15 +37,65 @@ static void on_comm_read(uart_obj *uart, const char *buf, const int l)
         {
             printf("%02X ", s[i]);
             print_counter++;
-            if (print_counter % 32 == 0) printf("\n");
+            if (print_counter % 32 == 0)
+            {
+                printf("\n");
+                if (timestamp) print_time();
+            }
         }
     }
     else
     {
         static char s[20 * 1024];
-        memcpy(s, buf, min(sizeof(s) - 1, l));
-        s[l] = '\0';
-        printf(s);
+        if (timestamp)
+        {
+            static bool new_line = true;
+            int j = -1;
+            int i = 0;
+            for (i = 0; i < l; i++)
+            {
+                if (('\r' == buf[i]) || ('\n' == buf[i]))
+                {
+                    if ((j >= 0) && (i > j))
+                    {
+                        memcpy(s, buf + j, i - j);
+                        s[i - j + 0] = '\n';
+                        s[i - j + 1] = '\0';
+                        if (new_line)
+                            print_time();
+                        printf(s);
+                        new_line = true;
+                    }
+                    else;
+                    j = i + 1;
+                }
+                else
+                {
+                    if (j < 0) j = i;
+                }
+                continue;
+            }
+
+            if ((j >= 0) && (i > j))
+            {
+                memcpy(s, buf + j, i - j);
+                s[i - j + 0] = '\0';
+                if (new_line)
+                {
+                    print_time();
+                    new_line = false;
+                }
+                printf(s);
+            }
+        }
+        else
+        {
+            int t = (int)sizeof(s) - 1 < l ? sizeof(s) - 1 : l;
+            memcpy(s, buf, t);
+
+            s[l] = '\0';
+            printf(s);
+        }
     }
 }
 
@@ -49,6 +117,7 @@ void help()
     printf("Common options:\n");
     printf("\t -help/-?                                 show this\n");
     printf("\t -hex       use hex display\n");
+    printf("\t -timestamp display time stamp for output default: OFF\n");
     printf("\t -async_io  use win32 async IO operations default: OFF\n");
     printf("\t -cr        cr | lf | crlf | lfcr         default: cr\n");
     printf("\t -input     string | char \n"
@@ -68,7 +137,7 @@ void interact_hex();
 BOOL ctrl_handler(DWORD fdwCtrlType);
 
 int main(const int argc, const char *args[])
-{   
+{
     int port = -1;
     int baud = -1;
     char parity[20] = {'\0'};
@@ -76,13 +145,15 @@ int main(const int argc, const char *args[])
     int  stopbits = -1;
     bool async_io = false;
 
+#define check_param_arg() do { if (i >= argc - 1) { fprintf(stderr, "arg missing for: %s\n", args[i]); help(); return -1; } } while (0)
+
 #define load_i_param(param) \
     if (strcmp(args[i], "-"#param) == 0)   \
-    {   param = atoi(args[i + 1]); i += 2; }
+    {   check_param_arg(); param = atoi(args[i + 1]); i += 2; }
 
 #define load_b_param(param) \
     if (strcmp(args[i], "-"#param) == 0)   \
-    {   param = true; i++; }    
+    {   param = true; i++; }
 
     if (argc < 2)
     {
@@ -91,7 +162,7 @@ int main(const int argc, const char *args[])
     }
 
     int i = 1;
-    while (i < argc - 1)
+    while (i < argc)
     {
         load_i_param(port)
         else load_i_param(baud)
@@ -99,6 +170,7 @@ int main(const int argc, const char *args[])
         else load_i_param(stopbits)
         else load_b_param(hex)
         else load_b_param(async_io)
+        else load_b_param(timestamp)
         else if ((strcmp(args[i], "-?") == 0) || (strcmp(args[i], "-help") == 0))
         {
             help();
@@ -106,6 +178,7 @@ int main(const int argc, const char *args[])
         }
         else if (strcmp(args[i], "-cr") == 0)
         {
+            check_param_arg();
             if (strcmp(args[i + 1], "cr") == 0) strcpy(cr, "\r");
             else if (strcmp(args[i + 1], "lf") == 0) strcpy(cr, "\n");
             else if (strcmp(args[i + 1], "crlf") == 0) strcpy(cr, "\r\n");
@@ -114,24 +187,24 @@ int main(const int argc, const char *args[])
         }
         else if (strcmp(args[i], "-input") == 0)
         {
+            check_param_arg();
             if (strcmp(args[i + 1], "string") == 0) use_getch = false;
             else if (strcmp(args[i + 1], "char") == 0) use_getch = true;
             i += 2;
         }
         else if (strcmp(args[i], "-parity") == 0)
         {
+            check_param_arg();
             strncpy(parity, args[i + 1], 19);
             i += 2;
         }
-        else i++;
+        else
+        {
+            fprintf(stderr, "unknown option: %s\n", args[i]);
+            return -1;
+        }
     }
 
-    while (i < argc)
-    {
-        load_b_param(hex)
-        else i++;
-    }
-    
     if (hex) use_getch = false;
 
     if (port < 0)
@@ -140,17 +213,17 @@ int main(const int argc, const char *args[])
         return -1;
     }
 
-    if (uart_open(&uart, 
-                  port, 
-                  baud, 
-                  parity, 
-                  databits, 
-                  stopbits, 
+    if (uart_open(&uart,
+                  port,
+                  baud,
+                  parity,
+                  databits,
+                  stopbits,
                   f_on_comm_read(on_comm_read),
                   &uart,
                   f_on_comm_close(on_comm_close),
                   &uart,
-                  async_io) == NULL) 
+                  async_io) == NULL)
     {
         fprintf(stderr, "Failed to open the specified port COM%d\n", port);
         return -1;
@@ -163,7 +236,7 @@ int main(const int argc, const char *args[])
 
     if (!SetConsoleCtrlHandler((PHANDLER_ROUTINE)ctrl_handler, TRUE))
         fprintf(stderr, "WARNING: SetConsoleCtrlHandler failed.\n");
-    
+
     if (use_getch)
         interact_direct();
     else if (!hex)
@@ -177,7 +250,7 @@ void interact_str()
 {
     char s[10240 + 1];
     while (true)
-    {        
+    {
         s[0] = '\0';
         gets(s);
         if (strlen(s) >= sizeof(s) - 1)
@@ -221,7 +294,7 @@ int hexstr(char *s, char *b, int max)
         }
 
         while ((*p != '\0') && (*p != ' ')) p++;
-        if (*p == ' ') *p = '\0';        
+        if (*p == ' ') *p = '\0';
         b[i++] = parsestr(start);
         if (i > max) break;
         p++;
@@ -234,7 +307,7 @@ void interact_hex()
     static char s[10240 + 1];
     static char d[10240];
     while (true)
-    {   
+    {
         s[0] = '\0';
         gets(s);
         if (strlen(s) >= sizeof(s) - 1)
@@ -253,7 +326,7 @@ void interact_direct()
     while (true)
     {
         char ch = _getch();
-        
+
         // although it is said that getch can't be used to capture Ctrl+C
         if (ch == 3)
         {
@@ -271,26 +344,26 @@ void interact_direct()
     }
 }
 
-BOOL ctrl_handler(DWORD fdwCtrlType) 
-{ 
-    switch (fdwCtrlType) 
+BOOL ctrl_handler(DWORD fdwCtrlType)
+{
+    switch (fdwCtrlType)
     {
-        case CTRL_C_EVENT: 
+        case CTRL_C_EVENT:
             uart_shutdown(&uart);
-            return TRUE;
-  
-        case CTRL_BREAK_EVENT: 
-            return FALSE; 
+            return FALSE;
+
+        case CTRL_BREAK_EVENT:
+            return FALSE;
 
         // console close/logoff/shutdown
-        case CTRL_CLOSE_EVENT: 
-        case CTRL_LOGOFF_EVENT: 
+        case CTRL_CLOSE_EVENT:
+        case CTRL_LOGOFF_EVENT:
         case CTRL_SHUTDOWN_EVENT:
             uart_shutdown(&uart);
-            return FALSE; 
+            return FALSE;
 
-        default: 
-            return FALSE; 
-    } 
+        default:
+            return FALSE;
+    }
 }
 
