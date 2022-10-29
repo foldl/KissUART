@@ -278,6 +278,8 @@ static DWORD WINAPI uart_rx_loop(uart_obj* uart)
     {
         if (len)
             comm_read2(uart, b);
+        else
+            Sleep(10);
     }
 
     return 0;
@@ -436,13 +438,15 @@ EXPORT_DLL int uart_config(uart_obj *uart,
     dbg_print("XonLim = %d\n", (int)dcb.XonLim);
     dbg_print("XoffLim = %d\n", (int)dcb.XoffLim);
 
-    //dcb.fOutxCtsFlow = TRUE;
-    //dcb.fOutxDsrFlow = FALSE;
-    //dcb.fRtsControl = RTS_CONTROL_HANDSHAKE;
-    //dcb.fDtrControl = DTR_CONTROL_ENABLE;
-    //dcb.fOutX = FALSE;
-    //dcb.fInX = FALSE;
+    dcb.fOutxCtsFlow = FALSE;
+    dcb.fOutxDsrFlow = FALSE;
+    dcb.fRtsControl = RTS_CONTROL_DISABLE;
+    dcb.fDtrControl = RTS_CONTROL_DISABLE;
+    dcb.fOutX = FALSE;
+    dcb.fInX = FALSE;
     dcb.fBinary = TRUE;
+    dcb.fDsrSensitivity = FALSE;
+
     //dcb.XonLim = 0;
     //dcb.XoffLim = 0;
     //dcb.ByteSize = 8;
@@ -494,19 +498,22 @@ EXPORT_DLL uart_obj *uart_open(uart_obj *uart,
 
     // set the timeout values
     COMMTIMEOUTS timeout;
-    timeout.ReadIntervalTimeout = 100;
-    timeout.ReadTotalTimeoutMultiplier = 10;
-    timeout.ReadTotalTimeoutConstant = 1000;
+    timeout.ReadIntervalTimeout = MAXDWORD;
+    timeout.ReadTotalTimeoutMultiplier = 0;
+    timeout.ReadTotalTimeoutConstant = 0;
     timeout.WriteTotalTimeoutMultiplier = 10;
     timeout.WriteTotalTimeoutConstant = 1000;
 
+    DWORD flags = FILE_FLAG_NO_BUFFERING | FILE_FLAG_WRITE_THROUGH;
+    if (async_io) flags |= FILE_FLAG_OVERLAPPED;
+
     // get a handle to the port
-    uart->h_comm = CreateFileA(uart->comm,               // communication port string (COMX)
+    uart->h_comm = CreateFileA(uart->comm,              // communication port string (COMX)
                          GENERIC_READ | GENERIC_WRITE,  // read/write types
                          0,                             // comm devices must be opened with exclusive access
                          NULL,                          // no security attributes
                          OPEN_EXISTING,                 // comm devices must use OPEN_EXISTING
-                         async_io ? FILE_FLAG_OVERLAPPED : 0,          // Async I/O
+                         flags,                         // Async I/O
                          0);                            // template must be 0 for comm devices
 
     if (uart->h_comm == INVALID_HANDLE_VALUE)
