@@ -28,7 +28,7 @@ typedef enum
     cc_error
 } enum_comm_close;
 
-typedef enum 
+typedef enum
 {
     ev_shutdown,
     ev_comm_event,
@@ -45,7 +45,7 @@ typedef struct _uart_obj
     char            comm[256];
     bool            async_io;
     HANDLE          h_comm;
-    HANDLE          h_thread; 
+    HANDLE          h_thread;
     HANDLE          h_comm_state;
     OVERLAPPED      o_event;
     OVERLAPPED      o_write;
@@ -66,15 +66,15 @@ typedef struct _uart_obj
 
 EXPORT_DLL uart_obj *uart_open(uart_obj *uart,
             const int portnr,
-            int  baud,          // baudrate   
+            int  baud,          // baudrate
             const char *parity, // parity    "none", "even", "odd", "mark", and "space"
-            int  databits,      // databits    
+            int  databits,      // databits
             int  stopbits,
             f_on_comm_read   on_comm_read,
             void            *comm_read_param,
             f_on_comm_close  on_comm_close,
             void            *comm_close_param,
-            const bool             async_io);
+            const bool       async_io);
 
 EXPORT_DLL void uart_send(uart_obj *uart, const char *buf, const int l);
 

@@ -477,7 +477,7 @@ EXPORT_DLL uart_obj *uart_open(uart_obj *uart,
             void            *comm_read_param,
             f_on_comm_close  on_comm_close,
             void            *comm_close_param,
-            const bool             async_io)
+            const bool       async_io)
 {
     memset(uart, 0, sizeof(*uart));
     uart->on_comm_read = on_comm_read;

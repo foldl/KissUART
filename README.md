@@ -76,21 +76,23 @@ function UartOpen(Uart: TUartObj;
                   OnCommRead: TOnCommRead;
                   CommReadParam: Pointer;
                   OnCommClose: TOnCommClose;
-                  CommCloseParam: Pointer): TUartObj; stdcall; external 'uart.dll' name 'uart_open@40';
+                  CommCloseParam: Pointer;
+                  AsyncIO: Boolean): TUartObj; stdcall;
+                  external 'uart.dll' name 'uart_open';
 
 procedure UartSend(Uart: TUartObj;
                    const Buf: PByte;
-                   const L: Integer); stdcall; external 'uart.dll' name 'uart_send@12';
+                   const L: Integer); stdcall; external 'uart.dll' name 'uart_send';
 
-procedure UartShutdown(Uart: TUartObj); stdcall; external 'uart.dll' name 'uart_shutdown@4';
+procedure UartShutdown(Uart: TUartObj); stdcall; external 'uart.dll' name 'uart_shutdown';
 
-function GetUartObjSize: Integer; stdcall; external 'uart.dll' name 'get_uart_obj_size@0';
+function GetUartObjSize: Integer; stdcall; external 'uart.dll' name 'get_uart_obj_size';
 
 function UartConfig(Uart: TUartObj;
                     const Baud: Integer;
                     const Parity: PChar;
                     const DataBits: Integer;
-                    const StopBits: Integer): Integer; stdcall; external 'uart.dll' name 'uart_config@20';
+                    const StopBits: Integer): Integer; stdcall; external 'uart.dll' name 'uart_config';
 ```
 
 

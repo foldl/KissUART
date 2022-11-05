@@ -16,14 +16,14 @@ static void print_time(void)
 {
     SYSTEMTIME wtm;
     GetLocalTime(&wtm);
-    printf("[%04d-%2d-%02d %02d:%02d:%02d.%02d] ",
+    printf("[%04d-%2d-%02d %02d:%02d:%02d.%03d] ",
            wtm.wYear,
            wtm.wMonth,
            wtm.wDay,
            wtm.wHour,
            wtm.wMinute,
            wtm.wSecond,
-           wtm.wMilliseconds / 1000);
+           wtm.wMilliseconds);
 }
 
 static void on_comm_read(uart_obj *uart, const char *buf, const int l)
